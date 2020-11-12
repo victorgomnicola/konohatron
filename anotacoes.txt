@@ -1,0 +1,12 @@
+Nº de parâmetros: 10^7
+Escalonador da taxa de aprendizado: cosine annealing adpatado
+Corpus: wikipedia
+Vamos tentar colocar 12 blocos de cabeça
+Dimensionalidade do embedding: 256 (talvez seja muito...)
+Tamanho do vocabulário do byte-pair enconding: 5000 (ou 1000)
+Amostrar a cada dez épocas para monitorar, além de loss e acurácia a cada época
+Se a loss não mudar ou mudar muito pouco, iremos considerar que o modelo não está melhorando
+
+tamanho da janela do contexto: 100
+
+vamos jogar fora textos maiores que 100, mas não é o ideal...

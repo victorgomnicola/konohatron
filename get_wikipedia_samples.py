@@ -14,21 +14,22 @@ def get_wikipedia_samples(n_samples = 500):
 	for s in tqdm(samples):
 	#solve the disambiguation problem
 		try:
-			p = wikipedia.page(s)
+			p = wikipedia.summary(s)
 		except Exception as e:
 			continue
 
 		text_samples.append(p)
 
+
 	return text_samples
 
 #generate the sampled dataset
 samples = []
-for i in range(1):
+for i in range(21):
 	samples += get_wikipedia_samples()
 
 #persists the samples
-sample_file = './dataset/training.pkl'
+sample_file = './dataset/big_training.pkl'
 pickle.dump(samples, open(sample_file, 'wb'))
 
 #test the persistency

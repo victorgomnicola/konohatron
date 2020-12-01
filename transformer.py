@@ -11,10 +11,13 @@ Description: Implement a Transformer block as a Keras layer and use it for text 
 import keras
 import tensorflow as tf
 from tensorflow import keras
+from keras_position_wise_feed_forward import FeedForward
 from tensorflow.keras import layers
 from bpemb import BPEmb
 import wikipedia
 import numpy as np
+import threading
+import gc
 """
 ## Implement multi head self attention as a Keras layer
 """
@@ -112,25 +115,29 @@ class TokenAndPositionEmbedding(layers.Layer):
         super(TokenAndPositionEmbedding, self).__init__()
         self.token_emb = layers.Dense(embed_dim)
         self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
+        self.max_len = maxlen
 
     def call(self, x):
-        maxlen = tf.shape(x)[-1]
-        positions = tf.range(start=0, limit=maxlen, delta=1)
+        #maxlen = tf.shape(x)[-1]
+        positions = tf.range(start=0, limit=self.max_len, delta=1)
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
         return x + positions
 
 
 
-vocab_size = 10000
-bpe_dim = 300
+vocab_size = 1000
+bpe_dim = 25
 encoder = BPEmb(lang= 'pt', vs = vocab_size, dim = bpe_dim)
+text_samples = []
 
-def sample(n=10, max_len = 300):
+def sample(number, n=4, max_len = 300):
+
+    global text_samples
 
     s = []
     while(len(s)<n):
-        print("Generating samples: "+str(round(len(s)/n, 2)), end = "\r")
+        print(str(number)+"-Generating samples: "+str(round(len(s)/n, 2)), end = "\r")
         try:
             text = wikipedia.summary(wikipedia.random(1))
             text_ids = encoder.encode_ids(text)
@@ -140,7 +147,29 @@ def sample(n=10, max_len = 300):
                 s.append(text_ids)
         except:
             pass
-    return s
+    
+    text_samples = text_samples + s 
+
+    #return s
+
+def sample_multthread(n = 32, n_threads = 8):
+
+    global text_samples
+    text_samples = []
+    threads = []
+    assert(n % n_threads == 0)
+    
+    for i in range(n_threads):
+        t = threading.Thread(target=sample, args=(i,))
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join()
+
+    assert(len(text_samples) == n)
+
+    return text_samples.copy()
 
 def preprocess(text_list, max_len = 300):
 
@@ -153,21 +182,22 @@ def preprocess(text_list, max_len = 300):
 
             X.append(np.concatenate((encoder.vectors[text[0:i]], np.zeros(shape= (max_len-i, bpe_dim), dtype = np.float32)), axis = 0))
             Y.append(text[i])
+            #print(X[-1].shape)
 
     return np.array(X), np.array(Y)
 
 
 max_len = 300
-embed_dim = 64  # Embedding size for each token
-num_heads = 4  # Number of attention heads
-ff_dim = 128  # Hidden layer size in feed forward network inside transformer
+embed_dim = 256  # Embedding size for each token
+num_heads = 8  # Number of attention heads
+ff_dim = 1024  # Hidden layer size in feed forward network inside transformer
 
 
-inputs = layers.Input(shape=(bpe_dim,max_len))
+inputs = layers.Input(shape=(max_len, bpe_dim))
 embedding_layer = TokenAndPositionEmbedding(max_len, vocab_size, embed_dim)
 x = embedding_layer(inputs)
 #transformer_block = TransformerBlock(embed_dim, num_heads, ff_dim)
-for _ in range(4):
+for _ in range(5):
     x = TransformerBlock(embed_dim, num_heads, ff_dim)(x)
 x = layers.GlobalAveragePooling1D()(x)
 x = layers.Dropout(0.1)(x)
@@ -176,14 +206,21 @@ x = layers.Dropout(0.1)(x)
 outputs = layers.Dense(vocab_size, activation="softmax")(x)
 
 model = keras.Model(inputs=inputs, outputs=outputs)
-opt = keras.optimizers.Adam(learning_rate=1e-5)
+
 print(model.summary())
+#model.load_weights('transformer.h5')
+
+cosine_schedule = tf.keras.experimental.CosineDecayRestarts(1e-5,10000)
+print('cosseno')
+opt = keras.optimizers.Adam(learning_rate=cosine_schedule)
 
 model.compile(loss = 'sparse_categorical_crossentropy', optimizer = opt, metrics = ['accuracy'])
 
 
 for epoch in range(10000):
-    X,Y = preprocess(sample(n= 100, max_len = max_len), max_len = max_len)
+    X,Y = preprocess(sample_multthread(), max_len = max_len)
     model.fit(X, Y, batch_size = 128)
+    model.save_weights('transformer.h5')
+    gc.collect()
 
 
